@@ -1,89 +1,3 @@
-// const Listing = require("../models/listing");
-
-// module.exports.index = async (req,res)=>{
-//   const allListings =  await Listing.find({});
-//   res.render("listings/index.ejs",{allListings});
-// }
-
-// module.exports.renderNewForm = (req,res)=>{
-//     res.render("listings/new.ejs");
-// }
-
-// module.exports.showListing = async(req,res)=>{
-//     let {id}= req.params;
-//     const listing = await Listing.findById(id).populate({path:"reviews",populate:{
-//         path: "author",
-//     }}).populate("owner");
-//     if(!listing){
-//          req.flash("error","Listing you requested for does not exist!");
-//          res.redirect("/listings");
-//     }
-//     console.log(listing);
-//     res.render("listings/show.ejs",{listing});
-// }
-
-// // module.exports.createListing = async(req,res,next)=>{
-// //     let url = req.file.path;
-// //     let filename = req.path.filename;
-// //     const newListing = new Listing(req.body.listing);
-// //     newListing.owner = req.user._id;
-// //     newListing.image = {url,filename};
-// //     await newListing.save();
-// //     req.flash("success","New Listing Created!");
-// //     res.redirect("/listings");
-// // }
-
-// module.exports.createListing = async(req,res,next)=>{
-//     try {
-//         console.log("--- DEBUG: In createListing controller ---");
-//         console.log("req.body.listing received by controller:", req.body.listing); // What the controller receives
-//         const newListing = new Listing(req.body.listing);
-//         newListing.owner = req.user._id;
-//         console.log("newListing object before save():", newListing); // What Mongoose will try to save
-//         await newListing.save();
-//         console.log("Listing saved successfully!"); // Confirmation if it reaches here
-//         req.flash("success","New Listing Created!");
-//         res.redirect("/listings");
-//         console.log("--- END DEBUG: In createListing controller ---");
-//     } catch (err) {
-//         console.error("!!! ERROR during listing creation !!!", err); // Catch any errors
-//         if (err.name === 'ValidationError') {
-//             let errorMessage = "Validation Error: ";
-//             for (let field in err.errors) {
-//                 errorMessage += err.errors[field].message + "; ";
-//             }
-//             req.flash("error", errorMessage);
-//             return res.redirect("/listings/new");
-//         }
-//         next(err);
-//     }
-// }
-
-// module.exports.renderEditListing = async(req,res)=>{
-//     let {id}= req.params;
-//     const listing = await Listing.findById(id);
-//      if(!listing){
-//          req.flash("error","Listing you requested for does not exist!");
-//          res.redirect("/listings");
-//     }
-//     res.render("listings/edit.ejs",{listing});
-// }
-
-// module.exports.updateListing = async(req,res)=>{
-//     let {id}= req.params;
-//     await Listing.findByIdAndUpdate(id,{...req.body.listing}); //desconstruct kiya req.body ko aur unke parameters ko indivual values me convert krenge
-//      req.flash("success","Listing Updated!");
-//     return  res.redirect(`/listings/${id}`);
-// }
-
-// module.exports.deleteListing = async(req,res)=>{
-//      let {id}= req.params;
-//     let deletedListing = await  Listing.findByIdAndDelete(id);
-//      req.flash("success"," Listing Deleted");
-//     res.redirect("/listings");
-// }
-
-
 const Listing = require("../models/listing");
 // If you have a Cloudinary config in a utility for deletion, import it here
  const cloudinary = require("../cloudConfig.js"); // Assuming you export cloudinary instance from cloudConfig
@@ -127,6 +41,14 @@ module.exports.createListing = async (req, res, next) => {
 
     const newListing = new Listing(req.body.listing);
     newListing.owner = req.user._id;
+
+    // Handle image upload from multer
+    if (req.file) {
+        newListing.image = {
+            url: req.file.path,
+            filename: req.file.filename
+        };
+    }
 
     console.log("New Listing object BEFORE save():", newListing);
 
@@ -174,16 +96,29 @@ module.exports.renderEditListing = async (req, res) => {
 // --- UPDATE LISTING - Handle PUT request to update a listing ---
 module.exports.updateListing = async (req, res) => {
     let { id } = req.params;
-    // Find and update the listing with data from req.body.listing
-    // If req.body.listing.image was set by the middleware (new upload), it will overwrite
-    // the existing image. If not, the old image remains.
-    const listing = await Listing.findByIdAndUpdate(id, { ...req.body.listing }, { new: true }); // {new: true} returns the updated doc
-
-    // If a new image was uploaded, you might want to delete the old one from Cloudinary
-    // This requires storing the old filename and using the Cloudinary API
-    // if (req.file && listing.image.filename) {
-    //     await cloudinary.uploader.destroy(listing.image.filename); // Assuming cloudinary is imported and configured
-    // }
+    
+    // Prepare update data
+    const updateData = { ...req.body.listing };
+    
+    // If a new image was uploaded, update the image field
+    if (req.file) {
+        updateData.image = {
+            url: req.file.path,
+            filename: req.file.filename
+        };
+        
+        // Optional: Delete old image from Cloudinary if it exists
+        const oldListing = await Listing.findById(id);
+        if (oldListing && oldListing.image && oldListing.image.filename) {
+            try {
+                await cloudinary.uploader.destroy(oldListing.image.filename);
+            } catch (err) {
+                console.error("Error deleting old image from Cloudinary:", err);
+            }
+        }
+    }
+    
+    const listing = await Listing.findByIdAndUpdate(id, updateData, { new: true }); // {new: true} returns the updated doc
 
     req.flash("success", "Listing Updated!");
     return res.redirect(`/listings/${id}`); // Redirect to the updated listing's show page
